@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game</title>
+    
+    <style>
+        @font-face {
+            font-family: 'MinecraftFont';
+            src: url('assets/minecraft.ttf') format('truetype');
+            font-display: swap; 
+        }
+
+        :root {
+            --game-width: 1280px;
+            --game-height: 720px;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            font-family: 'MinecraftFont', 'Courier New', Courier, monospace;
+            color: #fff;
+        }
+
+        #game-container {
+            width: var(--game-width);
+            height: var(--game-height);
+            position: relative;
+            background-color: #000;
+            overflow: hidden;
+            transition: opacity 1s ease-in-out; 
+        }
+
+        .scene {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            opacity: 1;
+            transition: opacity 0.5s ease;
+        }
+
+        .scene.hidden {
+            opacity: 0;
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        .title-text {
+            font-size: 48px;
+            text-align: center;
+            margin-bottom: 60px;
+            text-shadow: 4px 4px 0px #333;
+            letter-spacing: 2px;
+        }
+
+        .envelope-container {
+            cursor: pointer;
+            position: relative;
+            animation: wobble 2s infinite ease-in-out;
+            transition: transform 0.2s ease, opacity 0.5s ease;
+        }
+
+        .envelope-container:hover {
+            transform: scale(1.1);
+        }
+
+        .envelope-img {
+            width: 300px;
+            height: auto;
+            image-rendering: pixelated; 
+        }
+
+        @keyframes wobble {
+            0%   { transform: rotate(0deg); }
+            5%   { transform: rotate(-8deg); }
+            10%  { transform: rotate(8deg); }
+            15%  { transform: rotate(-4deg); }
+            20%  { transform: rotate(4deg); }
+            25%  { transform: rotate(0deg); }
+            100% { transform: rotate(0deg); }
+        }
+
+        /* NEW: Jump and Fall animation for the envelope */
+        @keyframes jumpFall {
+            0%   { transform: translateY(0) scale(1) rotate(0deg); animation-timing-function: ease-out; }
+            40%  { transform: translateY(-120px) scale(1.1) rotate(-10deg); animation-timing-function: ease-in; }
+            100% { transform: translateY(1000px) scale(0.9) rotate(25deg); opacity: 0; }
+        }
+
+        .envelope-jump {
+            animation: jumpFall 1s forwards ease-in !important;
+            pointer-events: none; /* Deletes hitbox */
+        }
+
+        .cutscene-text-container {
+            max-width: 80%;
+            text-align: center;
+            line-height: 1.6;
+            min-height: 100px; /* Prevents jumping when text wraps */
+        }
+
+        .typewriter-cursor {
+            animation: blink 1s step-end infinite;
+        }
+
+        @keyframes blink {
+            50% { opacity: 0; }
+        }
+
+        .instruction-text {
+            font-size: 20px;
+            color: #666;
+            position: absolute;
+            bottom: 60px;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+
+        .instruction-text.visible {
+            opacity: 1;
+        }
+
+        #scene-room {
+            background-image: url('assets/ghibli_room.jpg');
+            background-size: cover;
+            background-position: center;
+        }
+
+        /* HOW TO USE REGIONS: 
+           Uncomment the border line below to visually see the invisible boxes. 
+           This will let you easily move them around! */
+        .clickable-region {
+            position: absolute;
+            cursor: pointer;
+            /* border: 2px solid rgba(255, 0, 0, 0.5); */ 
+        }
+
+        #dialogue-box {
+            position: absolute;
+            bottom: 120px; /* Sits above the hotbar */
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80%;
+            background-color: rgba(0, 0, 0, 0.85);
+            border: 4px solid #fff;
+            padding: 20px;
+            font-size: 24px;
+            z-index: 200;
+            transition: opacity 0.2s ease;
+            pointer-events: none; /* Let clicks pass through to the room */
+        }
+        
+        #dialogue-box.hidden { opacity: 0; }
+
+        #book-overlay {
+            position: absolute;
+            bottom: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 150;
+            transition: transform 0.4s ease, opacity 0.4s ease;
+        }
+        
+        #book-overlay.hidden { transform: translateY(100%); opacity: 0; pointer-events: none; }
+        .book-content { position: relative; width: 85%; max-width: 900px; margin-bottom: 1%; }
+        .book-content img { width: 100%; display: block; image-rendering: pixelated; }
+        .book-text {
+            position: absolute;
+            /* Tweaked percentages to box the text perfectly inside the paper margins */
+            top: 10%; 
+            left: 14%; 
+            right: 14%; 
+            bottom: 12%;
+            color: #000; 
+            font-size: 18px; 
+            font-family: 'MinecraftFont', Courier, monospace;
+            line-height: 1.5;
+            
+            /* --- NEW: Split into two pages! --- */
+            column-count: 2;
+            column-gap: 15%; /* This gap skips the dark spine in the middle */
+        }
+
+        #cursor-follower {
+            position: fixed;
+            pointer-events: none;
+            z-index: 9999;
+            width: 50px; height: 50px;
+            image-rendering: pixelated;
+            transform: translate(-50%, -50%);
+            display: none;
+        }
+        
+        #cursor-follower.visible { display: block; }
+
+        .hotbar-slot.selected {
+            border-color: #ffff00;
+            background-color: #a0a0a0;
+        }
+
+        /* --- NEW: Hotbar & Room Items --- */
+        
+        .room-item {
+            position: absolute;
+            cursor: pointer;
+            transition: transform 0.2s ease, filter 0.2s ease;
+            image-rendering: pixelated;
+        }
+
+        .room-item:hover {
+            transform: scale(1.1);
+            filter: drop-shadow(0px 0px 8px rgba(255, 255, 255, 0.6));
+        }
+
+        /* The invisible zone at the bottom of the screen to trigger the hotbar */
+        #hotbar-trigger-zone {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 80px;
+            z-index: 99;
+            /* background-color: rgba(255,0,0,0.2); Uncomment to see the trigger zone */
+        }
+
+        #hotbar-container {
+            position: absolute;
+            bottom: -80px; /* Hidden by default */
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 2px;
+            padding: 4px;
+            background-color: #8b8b8b; /* Minecraft hotbar outer gray */
+            border: 2px solid #373737;
+            border-top-color: #ffffff;
+            border-left-color: #ffffff;
+            border-radius: 2px;
+            z-index: 100;
+            transition: bottom 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            pointer-events: none; /* Let hover pass through when hidden */
+        }
+
+        #hotbar-container.visible {
+            bottom: 10px;
+            pointer-events: auto;
+        }
+
+        .hotbar-slot {
+            width: 40px;
+            height: 40px;
+            background-color: #8b8b8b;
+            border: 2px solid #ffffff;
+            border-top-color: #373737;
+            border-left-color: #373737;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .hotbar-slot img {
+            width: 80%;
+            height: 80%;
+            object-fit: contain;
+            image-rendering: pixelated;
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0); }
+            100% { transform: scale(1); }
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        
+        <!-- SCENE 1: Interactive Intro -->
+        <div id="scene-intro" class="scene">
+            <div class="title-text">a love letter?</div>
+            <div class="envelope-container" id="envelope-button">
+                <img src="assets/envelope.png" alt="[Envelope Asset]" class="envelope-img">
+            </div>
+        </div>
+
+        <!-- SCENE 2: Typewriter Cutscene -->
+        <div id="scene-plot" class="scene hidden">
+            <div id="cutscene-content" class="cutscene-text-container"></div>
+            <div id="cutscene-instruction" class="instruction-text">[Press ENTER to continue]</div>
+    </div>
+
+    <!-- SCENE 3: Point and Click Room -->
+    <div id="scene-room" class="scene hidden">
+        
+        <!-- INSTRUCTION: Defining Clickable Regions -->
+        <!-- We use % for top/left/width/height so it scales perfectly on any screen. -->
+        <!-- Just add the class 'inspectable' and the 'data-dialogue' text to make a quick popup! -->
+        
+        <!-- Example: A generic inspectable object (A painting) -->
+        <!-- <div class="clickable-region inspectable" style="top: 27%; left: 23%; width: 7%; height: 12%;" data-dialogue="It's a beautiful landscape painting."></div> -->
+
+        <!-- The Book (Blue Rectangle on left shelf) -->
+        <div id="region-book" class="clickable-region" style="top: 48%; left: 12%; width: 6%; height: 14%;">
+            <img id="book-front-cover" src="assets/front_cover.png" alt="Book on shelf" style="width:100%; height:100%; object-fit:contain;">
+        </div>
+
+        <!-- ====================================================================== -->
+        <!-- 🪴 POT SIZE & POSITION SIGNPOST 🪴                                    -->
+        <!-- To change the SIZE: Adjust the 'width' & 'height' percentages below.   -->
+        <!-- To change POSITION: Adjust the 'top' & 'left' percentages below.       -->
+        <!-- ====================================================================== -->
+        <div id="region-pot" class="clickable-region" style="top: 41%; left: 53%; width: 12%; height: 15%;">
+            <!-- Note: display: none is explicitly set on the smashed pot now -->
+            <img id="intact-pot-img" src="assets/potted_plant.png" alt="Potted Plant" style="width:100%; height:100%; object-fit:contain;">
+            <!-- Shrunk the smashed pot to 50% and pinned it to the bottom center of the region -->
+            <img id="smashed-pot-img" src="assets/broken_pot.png" alt="Smashed Pot" style="width:50%; height:50%; object-fit:contain; display:none; position:absolute; bottom:0; left:25%;">
+        </div>
+
+        <!-- The Cupboard (Top Middle) -->
+        <div id="region-cupboard" class="clickable-region" style="top: 56%; left: 28%; width: 11%; height: 35%;"></div>
+
+        <!-- The Safe (Bottom Right) -->
+        <div id="region-safe" class="clickable-region" style="top: 23%; left: 75%; width: 20%; height: 70%;"></div>
+        
+        <!-- Invisible trigger zone to show hotbar on hover -->
+        <div id="hotbar-trigger-zone"></div>
+    </div>
+
+    <!-- UI Overlays -->
+    <div id="dialogue-box" class="hidden">
+        <span id="dialogue-text"></span><span class="typewriter-cursor">_</span>
+    </div>
+
+    <div id="book-overlay" class="hidden">
+        <div class="book-content">
+            <img src="assets/empty_book.png" alt="Book Background">
+            <div class="book-text">
+                Dear Diary... <br><br>
+                Today I wrote the most amazing love letter ever but I was so scared of someone finding it that i hid it in that huge safe and hid the key in that pot.<br><br>
+                Unfortunately, a plant grew in the pot and now i cant pull it out. <br><br>
+                On an unrelated note, i bought a hammer from the hammer store today. I placed it in the left drawer.<br><br>
+                Okay bye bye <br>
+                [Press ENTER to close]
+            </div>
+        </div>
+    </div>
+
+    <img id="cursor-follower" class="hidden" src="" alt="Held Item">
+
+    <!-- Global Hotbar (Accessible across scenes once activated) -->
+    <div id="hotbar-container">
+            <div class="hotbar-slot" id="slot-0"></div>
+            <div class="hotbar-slot" id="slot-1"></div>
+            <div class="hotbar-slot" id="slot-2"></div>
+            <div class="hotbar-slot" id="slot-3"></div>
+            <div class="hotbar-slot" id="slot-4"></div>
+            <div class="hotbar-slot" id="slot-5"></div>
+            <div class="hotbar-slot" id="slot-6"></div>
+            <div class="hotbar-slot" id="slot-7"></div>
+            <div class="hotbar-slot" id="slot-8"></div>
+        </div>
+
+    </div>
+
+    <script>
+        const AudioSystem = {
+            sounds: {},
+            init: function() {
+                this.sounds.sparkle = new Audio('audio/opening_sparkle.wav');
+                this.sounds.talking = new Audio('audio/talking.mp3');
+                this.sounds.talking.loop = true; // Loop the blips while typing
+                this.sounds.failure = new Audio('audio/failure.wav');
+                this.sounds.select = new Audio('audio/menu_select.wav');
+                this.sounds.pageturn = new Audio('audio/pageturn.mp3');
+                this.sounds.safeOpen = new Audio('audio/safe_open.wav');
+                this.sounds.potSmash = new Audio('audio/pot_smash.wav');
+            },
+            play: function(id) {
+                if (this.sounds[id]) {
+                    // Reset time so it can be spammed (except for talking which loops)
+                    if (id !== 'talking') this.sounds[id].currentTime = 0;
+                    
+                    // Catch handles browser autoplay policies if she hasn't clicked yet
+                    this.sounds[id].play().catch(e => console.warn("Audio blocked by browser:", e));
+                }
+            },
+            stop: function(id) {
+                if (this.sounds[id]) {
+                    this.sounds[id].pause();
+                    if (id !== 'talking') this.sounds[id].currentTime = 0;
+                }
+            }
+        };
+
+        /**
+         * Core Game Engine
+         */
+        const Game = {
+            currentScene: 'scene-intro',
+
+            init: function() {
+                this.resizeCanvas();
+                window.addEventListener('resize', () => this.resizeCanvas());
+                this.setupEventListeners();
+                
+                AudioSystem.init();
+                Inventory.init();
+                Cursor.init();
+                Room.init();
+            },
+
+            resizeCanvas: function() {
+                const container = document.getElementById('game-container');
+                const scale = Math.min(
+                    window.innerWidth / 1280,
+                    window.innerHeight / 720
+                );
+                container.style.transform = `scale(${scale})`;
+            },
+            
+            switchScene: function(newSceneId) {
+                const currentEl = document.getElementById(this.currentScene);
+                const newEl = document.getElementById(newSceneId);
+
+                if (currentEl) currentEl.classList.add('hidden');
+                if (newEl) newEl.classList.remove('hidden');
+                
+                this.currentScene = newSceneId;
+            },
+
+            setupEventListeners: function() {
+                const envelopeBtn = document.getElementById('envelope-button');
+                
+                envelopeBtn.addEventListener('click', () => {
+                    envelopeBtn.style.pointerEvents = 'none'; // Instantly delete hitbox
+                    AudioSystem.play('sparkle');
+                    envelopeBtn.classList.add('envelope-jump'); // Play jump & fall animation
+                    
+                    setTimeout(() => {
+                        this.switchScene('scene-plot'); 
+                        Cutscene.start(); 
+                    }, 2000); // Wait 1 second for animation to finish
+                });
+            }
+        };
+
+        const Cursor = {
+            follower: null,
+            init: function() {
+                this.follower = document.getElementById('cursor-follower');
+                window.addEventListener('mousemove', (e) => {
+                    if (Inventory.selectedSlot !== null) {
+                        this.follower.style.left = e.clientX + 'px';
+                        this.follower.style.top = e.clientY + 'px';
+                    }
+                });
+            },
+            update: function(imageSrc) {
+                if (imageSrc) {
+                    this.follower.src = imageSrc;
+                    this.follower.classList.add('visible');
+                } else {
+                    this.follower.classList.remove('visible');
+                }
+            }
+        };
+
+        const Dialogue = {
+            timeout: null,
+            typeInterval: null,
+            show: function(text) {
+                const box = document.getElementById('dialogue-box');
+                const textSpan = document.getElementById('dialogue-text');
+                box.classList.remove('hidden');
+                
+                clearInterval(this.typeInterval);
+                clearTimeout(this.timeout);
+                textSpan.textContent = '';
+                
+                AudioSystem.play('talking');
+                
+                let i = 0;
+                this.typeInterval = setInterval(() => {
+                    textSpan.textContent += text.charAt(i);
+                    i++;
+                    if (i >= text.length) {
+                        clearInterval(this.typeInterval);
+                        AudioSystem.stop('talking');
+                        this.timeout = setTimeout(() => this.hide(), 3000);
+                    }
+                }, 20);
+            },
+            hide: function() {
+                document.getElementById('dialogue-box').classList.add('hidden');
+                clearInterval(this.typeInterval);
+                AudioSystem.stop('talking');
+            }
+        };
+
+        const BookUI = {
+            isOpen: false,
+            open: function() {
+                AudioSystem.play('pageturn');
+                document.getElementById('book-overlay').classList.remove('hidden');
+                this.isOpen = true;
+            },
+            close: function() {
+                document.getElementById('book-overlay').classList.add('hidden');
+                this.isOpen = false;
+            }
+        };
+
+        const Room = {
+            flags: {
+                hasHammer: false,
+                potSmashed: false
+            },
+            init: function() {
+                // Global click to handle clicking off items/menus
+                document.getElementById('scene-room').addEventListener('click', (e) => {
+                    if (Inventory.selectedSlot !== null && !e.target.classList.contains('clickable-region')) {
+                        Inventory.deselect();
+                        AudioSystem.play('failure');
+                    }
+                    if (BookUI.isOpen && !e.target.closest('.book-content') && e.target.id !== 'region-book') {
+                        BookUI.close();
+                    }
+                });
+
+                // Enter key closes book/dialogue
+                window.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' && Game.currentScene === 'scene-room') {
+                        Dialogue.hide();
+                        if (BookUI.isOpen) BookUI.close();
+                    }
+                });
+
+                // 1. Book Logic
+                document.getElementById('region-book').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (Inventory.selectedSlot !== null) Inventory.deselect();
+                    BookUI.open();
+                });
+
+                // 2. Generic Inspectables (Defined in HTML with data-dialogue)
+                document.querySelectorAll('.inspectable').forEach(el => {
+                    el.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        if (Inventory.selectedSlot !== null) Inventory.deselect();
+                        Dialogue.show(e.target.getAttribute('data-dialogue'));
+                    });
+                });
+
+                // 3. Cupboard Logic (Gives Hammer)
+                document.getElementById('region-cupboard').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (Inventory.selectedSlot !== null) Inventory.deselect();
+                    
+                    if (!this.flags.hasHammer) {
+                        Inventory.addItem('hammer', 'assets/hammer.png');
+                        this.flags.hasHammer = true;
+                        Dialogue.show("You found a heavy hammer in the cupboard. Click it in your hotbar to equip it!");
+                    } else {
+                        Dialogue.show("The cupboard is empty now.");
+                    }
+                });
+
+                // 4. Pot Logic (Requires Hammer -> Gives Key)
+                document.getElementById('region-pot').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const held = Inventory.getSelectedItemId();
+                    
+                    if (this.flags.potSmashed) {
+                        Dialogue.show("You broke my pot D:< you owe me $50");
+                        if (held) Inventory.deselect();
+                        return;
+                    }
+
+                    if (held === 'hammer') {
+                        this.flags.potSmashed = true;
+                        AudioSystem.play('potSmash');
+                        Inventory.removeItem(Inventory.selectedSlot); // Consume hammer
+                        
+                        // Hide intact plant, show smashed pot explicitly
+                        document.getElementById('intact-pot-img').style.display = 'none';
+                        document.getElementById('smashed-pot-img').style.display = 'block'; 
+                        
+                        Inventory.addItem('key', 'assets/key.png'); // Give Key
+                        Dialogue.show("CRASH! A hidden key fell out of the pot.");
+                    } else {
+                        if (held) AudioSystem.play('failure');
+                        Dialogue.show("It's a sturdy pot, with something buried in its dirt. You can't get it out with just your hands though.");
+                        if (held) Inventory.deselect();
+                    }
+                });
+
+                // 5. Safe Logic (Requires Key)
+                document.getElementById('region-safe').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const held = Inventory.getSelectedItemId();
+                    
+                    if (held === 'key') {
+                        AudioSystem.play('safeOpen');
+                        Inventory.removeItem(Inventory.selectedSlot);
+                        Dialogue.show("Click! you found it!");
+                        
+                        // NOTE: Trigger your next phase or ending here!
+                        
+                    } else {
+                        if (held) AudioSystem.play('failure');
+                        Dialogue.show("It's a heavy steel safe. It requires a key.");
+                        if (held) Inventory.deselect();
+                    }
+                });
+            }
+        };
+
+        /**
+         * Inventory & Hotbar System
+         */
+        const Inventory = {
+            slots: new Array(9).fill(null),
+            selectedSlot: null,
+            hideTimeout: null,
+
+            init: function() {
+                const triggerZone = document.getElementById('hotbar-trigger-zone');
+                const hotbar = document.getElementById('hotbar-container');
+
+                triggerZone.addEventListener('mouseenter', () => this.showHotbar());
+                triggerZone.addEventListener('mouseleave', () => this.hideHotbar());
+                hotbar.addEventListener('mouseenter', () => this.showHotbar());
+                hotbar.addEventListener('mouseleave', () => this.hideHotbar());
+
+                // Add click listeners to slots for selection
+                for(let i=0; i<9; i++) {
+                    document.getElementById(`slot-${i}`).addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.selectSlot(i);
+                    });
+                }
+            },
+
+            selectSlot: function(index) {
+                if (this.slots[index] === null) return;
+                
+                // Deselect if clicking the currently selected slot
+                if (this.selectedSlot === index) {
+                    this.deselect();
+                    return;
+                }
+
+                AudioSystem.play('select');
+
+                if (this.selectedSlot !== null) {
+                    document.getElementById(`slot-${this.selectedSlot}`).classList.remove('selected');
+                }
+
+                this.selectedSlot = index;
+                document.getElementById(`slot-${index}`).classList.add('selected');
+                
+                const img = document.getElementById(`slot-${index}`).querySelector('img');
+                Cursor.update(img.src);
+            },
+
+            deselect: function() {
+                if (this.selectedSlot !== null) {
+                    document.getElementById(`slot-${this.selectedSlot}`).classList.remove('selected');
+                    this.selectedSlot = null;
+                    Cursor.update(null);
+                }
+            },
+
+            removeItem: function(index) {
+                this.slots[index] = null;
+                document.getElementById(`slot-${index}`).innerHTML = '';
+                if (this.selectedSlot === index) {
+                    this.deselect();
+                }
+            },
+
+            getSelectedItemId: function() {
+                if (this.selectedSlot === null) return null;
+                return this.slots[this.selectedSlot];
+            },
+
+            addItem: function(id, imageSrc) {
+                // Find first empty slot
+                const emptyIndex = this.slots.findIndex(slot => slot === null);
+                
+                if (emptyIndex !== -1) {
+                    this.slots[emptyIndex] = id;
+                    
+                    // Update UI
+                    const slotEl = document.getElementById(`slot-${emptyIndex}`);
+                    slotEl.innerHTML = `<img src="${imageSrc}" alt="${id}" draggable="false">`;
+                    
+                    // Pop up the hotbar to show what was collected
+                    this.showHotbarTemporarily();
+                    return true;
+                }
+                console.log("Inventory full!");
+                return false;
+            },
+
+            showHotbar: function() {
+                clearTimeout(this.hideTimeout);
+                document.getElementById('hotbar-container').classList.add('visible');
+            },
+
+            hideHotbar: function() {
+                // Added a 1-second (1000ms) linger delay before hiding the hotbar
+                this.hideTimeout = setTimeout(() => {
+                    document.getElementById('hotbar-container').classList.remove('visible');
+                }, 1000);
+            },
+
+            showHotbarTemporarily: function() {
+                this.showHotbar();
+                // Hide it again after 2.5 seconds
+                this.hideTimeout = setTimeout(() => {
+                    this.hideHotbar();
+                }, 2500);
+            }
+        };
+
+        /**
+         * Modular Cutscene Manager
+         */
+        const Cutscene = {
+            // --- EDIT THESE PARAMETERS ---
+            config: {
+                speedMs: 50,          // Typing speed (lower is faster)
+                fontSize: '36px',     // Text size
+                texts: [              // The sequence of messages
+                    "hi.",
+                    "i made something a little special for you.",
+                    "i hope it helps you remember i love you :P",
+                    "( even when we're apart )",
+                    "anyways. enjoy this experience ;)",
+                    "p.s. take a break whenever u like!",
+                    "i'll lyk when i'm auto-saving for you :D",
+                    "alright enough dilly-dally. what was in that love letter?",
+                    "...",
+                    " - loading letter - ",
+                    "...",
+                    " - ERROR: letter not found - ",
+                    "...",
+                    "... l-letter not found???",
+                    "oops. i must've missplaced that code.",
+                    "should be around here somewhere... can you help me find it?"
+                ]
+            },
+            // -----------------------------
+
+            currentIndex: 0,
+            currentChar: 0,
+            isTyping: false,
+            typeInterval: null,
+            
+            start: function(customConfig = null) {
+                if (customConfig) {
+                    this.config = { ...this.config, ...customConfig };
+                }
+                this.currentIndex = 0;
+                
+                // Apply custom font size
+                document.getElementById('cutscene-content').style.fontSize = this.config.fontSize;
+                
+                // Bind keydown event specifically for the cutscene
+                this.keyListener = this.handleInput.bind(this);
+                window.addEventListener('keydown', this.keyListener);
+                
+                this.showNextText();
+            },
+            
+            showNextText: function() {
+                // Check if we ran out of texts
+                if (this.currentIndex >= this.config.texts.length) {
+                    this.end();
+                    return;
+                }
+                
+                // Setup UI for new text
+                document.getElementById('cutscene-instruction').classList.remove('visible');
+                this.isTyping = true;
+                this.currentChar = 0;
+                
+                AudioSystem.play('talking');
+                
+                const targetText = this.config.texts[this.currentIndex];
+                const contentDiv = document.getElementById('cutscene-content');
+                
+                // Prepare HTML with a blinking cursor
+                contentDiv.innerHTML = '<span id="typewriter-text"></span><span class="typewriter-cursor">_</span>';
+                const textSpan = document.getElementById('typewriter-text');
+                
+                // Clear any existing typing interval just in case
+                clearInterval(this.typeInterval);
+                
+                // Start typing loop
+                this.typeInterval = setInterval(() => {
+                    textSpan.textContent += targetText.charAt(this.currentChar);
+                    this.currentChar++;
+                    
+                    if (this.currentChar >= targetText.length) {
+                        this.finishTyping();
+                    }
+                }, this.config.speedMs);
+            },
+            
+            finishTyping: function() {
+                clearInterval(this.typeInterval);
+                AudioSystem.stop('talking'); // Stop audio when typing finishes instantly
+                
+                const targetText = this.config.texts[this.currentIndex];
+                document.getElementById('typewriter-text').textContent = targetText;
+                
+                this.isTyping = false;
+                
+                // Only show "Press Enter" instruction on the very first text
+                if (this.currentIndex === 0) {
+                    document.getElementById('cutscene-instruction').classList.add('visible'); 
+                }
+            },
+            
+            handleInput: function(e) {
+                if (e.key === 'Enter') {
+                    if (this.isTyping) {
+                        // If typing, Enter instantly finishes the current line
+                        this.finishTyping();
+                    } else {
+                        // If done typing, Enter goes to the next line
+                        this.currentIndex++;
+                        this.showNextText();
+                    }
+                }
+            },
+            
+            end: function() {
+                // Clean up listener so it doesn't fire later in the game
+                window.removeEventListener('keydown', this.keyListener);
+                
+                // Move to Scene 3 (The Point & Click Room)
+                Game.switchScene('scene-room');
+            }
+        };
+
+        // Start the game loop when page loads
+        window.onload = () => Game.init();
+    </script>
+</body>
+</html>
